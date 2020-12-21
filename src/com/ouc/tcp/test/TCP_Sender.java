@@ -1,5 +1,5 @@
-/***************************2.1: ACK/NACK
-**************************** Feng Hong; 2015-12-09*/
+/***************************3.0: 将考虑延时和丢包,此时仍是停止等待;
+**************************** Ctwo; 2020-12-21*/
 
 package com.ouc.tcp.test;
 
@@ -11,21 +11,24 @@ import com.ouc.tcp.tool.TCP_TOOL;
 
 import java.util.Enumeration;
 
+enum FlagType {
+	Stable,            //信道无差错
+	ErrorOnly,         //只出错
+	LossOnly,          //只丢包
+	DelayOnly,         //只延迟
+	ErrorWithLoss,     //出错 / 丢包
+	ErrorWithDelay,    //出错 / 延迟
+	LossWithDelay,     //丢包 / 延迟
+	RealEnv,           //实际环境=出错 / 丢包 / 延迟
+}
+
 public class TCP_Sender extends TCP_Sender_ADT {
 	
 	private TCP_PACKET tcpPack;	//待发送的TCP数据报
 	private volatile int flag = 0;
-
-	private enum FlagType {
-		Stable,            //信道无差错
-		ErrorOnly,         //只出错
-		LossOnly,          //只丢包
-		DelayOnly,         //只延迟
-		ErrorWithLoss,     //出错 / 丢包
-		ErrorWithDelay,    //出错 / 延迟
-		LossWithDelay,     //丢包 / 延迟
-		RealEnv,           //实际环境=出错 / 丢包 / 延迟
-	}
+	private TCP_PACKET rcvPack;  // 已经收到的recv_pkt
+	private UDT_Timer timer;
+	private Boolean canceled = false;
 
 	/*构造函数*/
 	public TCP_Sender() {
@@ -48,9 +51,16 @@ public class TCP_Sender extends TCP_Sender_ADT {
 		//发送TCP数据报
 		udt_send(tcpPack);
 		flag = 0;
-		
+
+		// 设置超时重传
+		timer = new UDT_Timer();
+
+		UDT_RetransTask task = new UDT_RetransTask(client, tcpPack);
+		// 3s后执行, 之后每隔3s执行
+		timer.schedule(task, 3000, 3000);
+		canceled = false;
 		//等待ACK报文
-		//waitACK();
+		//停止等待;
 		while (flag==0);
 	}
 	
@@ -59,7 +69,7 @@ public class TCP_Sender extends TCP_Sender_ADT {
 	public void udt_send(TCP_PACKET stcpPack) {
 		//设置错误控制标志
 
-		tcpH.setTh_eflag((byte) FlagType.ErrorOnly.ordinal());
+		tcpH.setTh_eflag((byte) FlagType.RealEnv.ordinal());
 		//System.out.println("to send: "+stcpPack.getTcpH().getTh_seq());				
 		//发送数据报
 		client.send(stcpPack);
@@ -70,20 +80,28 @@ public class TCP_Sender extends TCP_Sender_ADT {
 	public void waitACK() {
 		//循环检查ackQueue
 		//循环检查确认号对列中是否有新收到的ACK		
-		if(!ackQueue.isEmpty()){
+		if(!isAck(this.rcvPack.getTcpH().getTh_ack())){
 			// get the head of this queue, but does not remove
-			int currentAck=ackQueue.poll();
 			// System.out.println("CurrentAck: "+currentAck);
-			if (currentAck == tcpPack.getTcpH().getTh_seq()){
-				System.out.println("Clear: "+tcpPack.getTcpH().getTh_seq());
-				flag = 1;
+			System.out.println("Clear: "+tcpPack.getTcpH().getTh_seq());
+			flag = 1;
+			// 收到ack,取消计时器timer的重发计时
+			timer.cancel();
+			canceled = true;
 
-			}else{
-				// 重新发送
-				System.out.println("Retransmit: "+tcpPack.getTcpH().getTh_seq());
-				udt_send(tcpPack);
-				flag = 0;
+			// 记录收到的包
+			ackQueue.add(rcvPack.getTcpH().getTh_ack());
+
+		}
+		else{
+			// 是一个已经被ACK的包,等待计时器超时再重发
+			if (canceled){
+				System.out.println("Delay caused the resent");
 			}
+			else {
+				System.out.println("Acked pkt, waiting for timeout!");
+			}
+
 		}
 	}
 
@@ -94,17 +112,29 @@ public class TCP_Sender extends TCP_Sender_ADT {
 		// ACK包不出错
 		if(CheckSum.computeChkSum(recvPack) == recvPack.getTcpH().getTh_sum()) {
 			// 重复的包也一样塞到队列里,在waitACK里面统一处理
-			ackQueue.add(recvPack.getTcpH().getTh_ack());
-			System.out.println();
+			this.rcvPack = recvPack;
 			//处理ACK报文
 			waitACK();
 		}
 		else {
-			// ACK包出错, 重发
-			udt_send(tcpPack);
-			flag = 0;
-			System.out.println();
+			if (canceled){
+				System.out.println("Delay caused the resent");
+			}
+			else {
+				System.out.println("Wrong Ack, waiting for timeout");
+				// ACK包出错, 等待计时器超时自动重发
+			}
+
 		}
+		System.out.println();
 	}
-	
+
+	private boolean isAck(int ack){
+		for (int x:ackQueue) {
+			if (x == ack){
+				return true;
+			}
+		}
+		return false;
+	}
 }
