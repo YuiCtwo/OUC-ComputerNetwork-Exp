@@ -1,0 +1,14 @@
+.idea
+.settings
+
+.classpath
+.project
+
+recvData.txt
+Log.txt
+ENCDA.tcp
+Config.ini
+
+bin
+doc
+lib
