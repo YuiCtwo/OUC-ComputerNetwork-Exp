@@ -10,6 +10,10 @@ import com.ouc.tcp.message.*;
 import com.ouc.tcp.tool.TCP_TOOL;
 
 import java.util.Enumeration;
+import java.util.LinkedList;
+import java.util.Queue;
+import java.util.Timer;
+import java.util.concurrent.LinkedBlockingQueue;
 
 enum FlagType {
 	Stable,            //信道无差错
@@ -28,40 +32,61 @@ public class TCP_Sender extends TCP_Sender_ADT {
 	private volatile int flag = 0;
 	private TCP_PACKET rcvPack;  // 已经收到的recv_pkt
 	private UDT_Timer timer;
-	private Boolean canceled = false;
+	private LinkedBlockingQueue<TCP_PACKET> packets;
+	private short windows = 16;
+	private int send_base = 1;
+	private int next_seq = 1;
+	private TaskPacketsRetransmit task;
+
 
 	/*构造函数*/
 	public TCP_Sender() {
 		super();	//调用超类构造函数
 		super.initTCP_Sender(this);		//初始化TCP发送端
+		timer = new UDT_Timer();
+		packets = new LinkedBlockingQueue<TCP_PACKET>();
 	}
 	
 	@Override
 	//可靠发送（应用层调用）：封装应用层数据，产生TCP数据报；需要修改
 	public void rdt_send(int dataIndex, int[] appData) {
-		
+		// appData 要发送的数据
+		// dataIndex 要发的数据的索引
+		while (next_seq >= send_base + windows){
+			// 等待收到ack后窗口的移动
+		}
+		// next_seq < send_base + N
 		//生成TCP数据报（设置序号和数据字段/校验和),注意打包的顺序
-		tcpH.setTh_seq(dataIndex * appData.length + 1);//包序号设置为字节流号：
+		tcpH.setTh_seq(next_seq);//包序号设置为要发送的序号
 		tcpS.setData(appData);
-		tcpPack = new TCP_PACKET(tcpH, tcpS, destinAddr);		
-				
+		tcpPack = new TCP_PACKET(tcpH, tcpS, destinAddr);
+
 		tcpH.setTh_sum(CheckSum.computeChkSum(tcpPack));
 		tcpPack.setTcpH(tcpH);
-		
+
 		//发送TCP数据报
 		udt_send(tcpPack);
-		flag = 0;
 
-		// 设置超时重传
-		timer = new UDT_Timer();
+		// 添加到滑动窗口要重传的数据中
+		try {
+			if(this.append(tcpPack)){
+//				System.out.println("Add success!");
+			}
+			else {
+				System.out.println("queue is full, this shouldn't has appeared!");
+			}
+		} catch (CloneNotSupportedException ignored) {
+		}
 
-		UDT_RetransTask task = new UDT_RetransTask(client, tcpPack);
-		// 3s后执行, 之后每隔3s执行
-		timer.schedule(task, 3000, 3000);
-		canceled = false;
-		//等待ACK报文
-		//停止等待;
-		while (flag==0);
+		if (send_base == next_seq){
+			// 设置超时重传
+			// 3s后执行, 之后每隔3s执行
+			task = new TaskPacketsRetransmit(client, packets);
+			timer.schedule(task, 3000, 3000);
+
+		}
+		// 下一个要发送的包后移一位
+		next_seq += 1;
 	}
 	
 	@Override
@@ -78,30 +103,34 @@ public class TCP_Sender extends TCP_Sender_ADT {
 	@Override
 	//需要修改
 	public void waitACK() {
-		//循环检查ackQueue
-		//循环检查确认号对列中是否有新收到的ACK		
-		if(!isAck(this.rcvPack.getTcpH().getTh_ack())){
-			// get the head of this queue, but does not remove
-			// System.out.println("CurrentAck: "+currentAck);
-			System.out.println("Clear: "+tcpPack.getTcpH().getTh_seq());
-			flag = 1;
-			// 收到ack,取消计时器timer的重发计时
-			timer.cancel();
-			canceled = true;
+
+		int ack = this.rcvPack.getTcpH().getTh_ack();
+		if (ack >= send_base){
+			int d = (ack + 1) - send_base;
+			send_base = ack + 1;
+
+			// 窗口的滑动操作
+			this.slide(d);
+
+			// 是否重置计时器
+			if (send_base == next_seq){
+				// 全部包已经ack
+				task.cancel();
+			}
+			else {
+				// 重启task
+				task.cancel();
+				task = new TaskPacketsRetransmit(client, packets);
+				timer.schedule(this.task, 3000, 3000);
+
+			}
+			System.out.println("Clear: "+ack);
 
 			// 记录收到的包
 			ackQueue.add(rcvPack.getTcpH().getTh_ack());
-
 		}
 		else{
-			// 是一个已经被ACK的包,等待计时器超时再重发
-			if (canceled){
-				System.out.println("Delay caused the resent");
-			}
-			else {
-				System.out.println("Acked pkt, waiting for timeout!");
-			}
-
+			System.out.println("An outdated ack");
 		}
 	}
 
@@ -117,24 +146,49 @@ public class TCP_Sender extends TCP_Sender_ADT {
 			waitACK();
 		}
 		else {
-			if (canceled){
-				System.out.println("Delay caused the resent");
-			}
-			else {
-				System.out.println("Wrong Ack, waiting for timeout");
-				// ACK包出错, 等待计时器超时自动重发
-			}
+			// ack包出错,等待重传
+			System.out.println("Wrong ack pkt, waiting for timeout");
 
 		}
 		System.out.println();
 	}
 
-	private boolean isAck(int ack){
-		for (int x:ackQueue) {
-			if (x == ack){
-				return true;
-			}
+
+
+	// 对 pkt_queue 的操作
+	private boolean append(TCP_PACKET pkt) throws CloneNotSupportedException {
+		// 存入 packets 中的时候必须要深复制,不然都变成一样的了
+		if (this.packets.size() < this.windows){
+			this.packets.offer(pkt.clone());
+			return true;
 		}
-		return false;
+		else{
+			return false;
+		}
+	}
+
+	private void setWidth(short w){
+		if (w > this.windows){
+			// 不需要收缩
+		}
+		else {
+			// 收缩
+			this.resize_width();
+		}
+		this.windows = w;
+	}
+
+	private void resize_width(){
+		while (this.packets.size() > this.windows){
+			// poll() 方法从队列中删除第一个元素,即窗口向右收缩
+			this.packets.poll();
+		}
+	}
+
+	private void slide(int s){
+		// 窗口滑动s位
+		for (int i = 0; i < s; i++) {
+			this.packets.poll();
+		}
 	}
 }

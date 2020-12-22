@@ -16,8 +16,7 @@ import com.ouc.tcp.test.FlagType;
 public class TCP_Receiver extends TCP_Receiver_ADT {
 	
 	private TCP_PACKET ackPack;	//回复的ACK报文段
-	private TCP_PACKET lastPack = null; // 上一个收到的 pkt
-	int sequence=1;//用于记录当前待接收的包序号，注意包序号不完全是
+	int expect_seq = 1;//用于记录当前待接收的包序号
 		
 	/*构造函数*/
 	public TCP_Receiver() {
@@ -28,37 +27,35 @@ public class TCP_Receiver extends TCP_Receiver_ADT {
 	@Override
 	//接收到数据报：检查校验和，设置回复的ACK报文段
 	public void rdt_recv(TCP_PACKET recvPack) {
-		//检查校验码，生成ACK
+		// 检查校验码，生成ACK
 		if(CheckSum.computeChkSum(recvPack) == recvPack.getTcpH().getTh_sum()) {
-			//生成ACK报文段（设置确认号）
-			tcpH.setTh_ack(recvPack.getTcpH().getTh_seq());
-			ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
-			tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
-			//回复ACK报文段
-			reply(ackPack);			
-			
-			//将接收到的正确有序的数据插入data队列，准备交付
-			dataQueue.add(recvPack.getTcpS().getData());				
-			sequence++;
+			// 生成ACK报文段（设置确认号）
+			if (expect_seq == recvPack.getTcpH().getTh_seq()){
+				tcpH.setTh_ack(recvPack.getTcpH().getTh_seq());
+				ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
+				tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
+				// 回复ACK报文段
+				reply(ackPack);
 
-			// 设置上一个包为当前的包
-			lastPack = ackPack;
+				// 将接收到的正确有序的数据插入data队列，准备交付
+				dataQueue.add(recvPack.getTcpS().getData());
+				expect_seq += 1;
+
+			}
+			else {
+				System.out.println("Discard pkt" + recvPack.getTcpH().getTh_seq());
+				// 重复发一个对有序的最大值的包的ack
+				tcpH.setTh_ack(expect_seq-1);
+				ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
+				tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
+				reply(ackPack);
+			}
+
 		}else{
 			System.out.println("Recieve Computed: "+CheckSum.computeChkSum(recvPack));
 			System.out.println("Recieved Packet"+recvPack.getTcpH().getTh_sum());
-			System.out.println("Problem: Packet Number: "+recvPack.getTcpH().getTh_seq()+" + InnerSeq:  "+sequence);
-			// 重发对前一个包的确认
-			// 其实可以使用recvPack.getTcpH().getTh_seq()-100来表示前一个
-			if (lastPack != null){
-				tcpH.setTh_ack(lastPack.getTcpH().getTh_seq());
-			}
-			else {
-				tcpH.setTh_ack(0);
-			}
-			ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
-			tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
-			//回复ACK报文段
-			reply(ackPack);
+			System.out.println("Problem: Packet Number: "+recvPack.getTcpH().getTh_seq());
+			// 啥都不用做,等待发方重传就完事了
 		}
 
 		System.out.println();
@@ -92,7 +89,6 @@ public class TCP_Receiver extends TCP_Receiver_ADT {
 			}
 			writer.close();
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 	}
