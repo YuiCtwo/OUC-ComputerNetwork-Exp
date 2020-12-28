@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.LinkedList;
 
@@ -99,8 +100,10 @@ public class TCP_Receiver extends TCP_Receiver_ADT {
 			// 将接收到的正确有序的数据插入data队列，准备交付
 			for (int i = expect_seq; i < next_seq; i++) {
 				dataQueue.add(recvBuffer.get(i));
+				System.out.println("Deliver Data Seq:" + i);
 			}
 
+			deliver_data();
 			// 将下一个期望的包移动到第一个不连续的位置
 			expect_seq = next_seq;
 
@@ -119,11 +122,6 @@ public class TCP_Receiver extends TCP_Receiver_ADT {
 		}
 
 		System.out.println();
-		
-		
-		//交付数据（每20组数据交付一次）
-		if(dataQueue.size() == 20) 
-			deliver_data();	
 	}
 
 	@Override

@@ -127,7 +127,7 @@ public class TCP_Sender extends TCP_Sender_ADT {
 			// 设置超时重传
 			// 3s后执行, 之后每隔3s执行
 			task = new RenoTimerTask(this, packets_buffer);
-			timer.schedule(task, 1000, 1000);
+			timer.schedule(task, 3000, 3000);
 
 		}
 
@@ -150,28 +150,32 @@ public class TCP_Sender extends TCP_Sender_ADT {
 
 		int ack = this.rcvPack.getTcpH().getTh_ack();
 		System.out.println("send_base: " + this.send_base);
-		if (ack == this.ack_cache){
-			ack_times += 1;
-			if (ack_times == 4){
-				// 连续收到3个对同一个报文的ack
-				// 执行快重传 ack+1 序列的包
-				TCP_PACKET pkt = record.get(ack_cache + 1);
-				System.out.println("3-ack, resend pkt: " + pkt.getTcpH().getTh_seq());
-				udt_send(pkt);
-
-				System.out.println("Windows size in sender: " + this.cwnd);
-				// 拥塞窗口减半
-				cwnd = (short) (cwnd / 2);
-				System.out.println("CongestionAvoidance used!");
-
-				// 设置为拥塞避免
-				pattern = CongestionController.CongestionAvoidance;
-			}
-		}
-		else {
-			this.ack_cache = ack;
-			ack_times = 1;
-		}
+//		if (ack == this.ack_cache){
+//			ack_times += 1;
+//			if (ack_times == 4){
+//				// 连续收到3个对同一个报文的ack
+//				// 执行快重传 ack+1 序列的包
+//				TCP_PACKET pkt = record.get(ack_cache + 1);
+//				System.out.println("3-ack, resend pkt: " + pkt.getTcpH().getTh_seq());
+//				udt_send(pkt);
+//
+//				System.out.println("Windows size in sender: " + this.cwnd);
+//				// 拥塞窗口减半
+//				cwnd = (short) (cwnd / 2);
+//				cwnd_tmp = cwnd;
+//				ssthresh = (short) Math.max(ssthresh / 2, 2);
+//				System.out.println("CongestionAvoidance used!");
+//				System.out.println("Windows size become:" + cwnd);
+//				System.out.println("ssthresh size become:" + ssthresh);
+//
+//				// 设置为拥塞避免
+//				pattern = CongestionController.CongestionAvoidance;
+//			}
+//		}
+//		else {
+//			this.ack_cache = ack;
+//			ack_times = 1;
+//		}
 		if (ack >= send_base){
 
 			// 计算滑动的位数
@@ -197,7 +201,7 @@ public class TCP_Sender extends TCP_Sender_ADT {
 				// 重启task
 				task.cancel();
 				task = new RenoTimerTask(this, packets_buffer);
-				timer.schedule(this.task, 1000, 1000);
+				timer.schedule(this.task, 3000, 3000);
 			}
 
 			// 对于新确认的包才增加窗口
@@ -211,7 +215,8 @@ public class TCP_Sender extends TCP_Sender_ADT {
 				cwnd += 1;
 				cwnd_tmp += 1;
 			}
-
+			System.out.println("Windows size="+ cwnd);
+			System.out.println("ssthresh size=" + ssthresh);
 		}
 		else{
 			System.out.println("An outdated ack");
