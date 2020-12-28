@@ -102,8 +102,8 @@ public class TCP_Receiver extends TCP_Receiver_ADT {
 				dataQueue.add(recvBuffer.get(i));
 				System.out.println("Deliver Data Seq:" + i);
 			}
-
 			deliver_data();
+
 			// 将下一个期望的包移动到第一个不连续的位置
 			expect_seq = next_seq;
 
