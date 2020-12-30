@@ -4,15 +4,9 @@
 package com.ouc.tcp.test;
 
 import com.ouc.tcp.client.TCP_Sender_ADT;
-import com.ouc.tcp.client.UDT_RetransTask;
 import com.ouc.tcp.client.UDT_Timer;
 import com.ouc.tcp.message.*;
-import com.ouc.tcp.tool.TCP_TOOL;
 
-import java.util.Enumeration;
-import java.util.LinkedList;
-import java.util.Queue;
-import java.util.Timer;
 import java.util.concurrent.LinkedBlockingQueue;
 
 enum FlagType {
@@ -154,7 +148,6 @@ public class TCP_Sender extends TCP_Sender_ADT {
 	}
 
 
-
 	// 对 pkt_queue 的操作
 	private boolean append(TCP_PACKET pkt) throws CloneNotSupportedException {
 		// 存入 packets 中的时候必须要深复制,不然都变成一样的了
@@ -167,23 +160,6 @@ public class TCP_Sender extends TCP_Sender_ADT {
 		}
 	}
 
-	private void setWidth(short w){
-		if (w > this.windows){
-			// 不需要收缩
-		}
-		else {
-			// 收缩
-			this.resize_width();
-		}
-		this.windows = w;
-	}
-
-	private void resize_width(){
-		while (this.packets.size() > this.windows){
-			// poll() 方法从队列中删除第一个元素,即窗口向右收缩
-			this.packets.poll();
-		}
-	}
 
 	private void slide(int s){
 		// 窗口滑动s位
