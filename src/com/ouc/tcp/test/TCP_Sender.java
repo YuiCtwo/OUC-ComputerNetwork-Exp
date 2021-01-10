@@ -43,7 +43,7 @@ public class TCP_Sender extends TCP_Sender_ADT {
 	// 发送的数据包的缓冲区
 	private Queue<TCP_PACKET> packets_buffer;
 
-	private HashMap<Integer, TCP_PACKET>record;
+	// private HashMap<Integer, TCP_PACKET>record;
 
 	// 拥塞窗口大小
 	private short cwnd = 1;
@@ -85,7 +85,7 @@ public class TCP_Sender extends TCP_Sender_ADT {
 		tcpH.setTh_eflag((byte) FlagType.RealEnv.ordinal());
 
 		// 全局所有发的包的记录
-		record = new HashMap<Integer, TCP_PACKET>();
+		// record = new HashMap<Integer, TCP_PACKET>();
 	}
 	
 	@Override
@@ -106,10 +106,10 @@ public class TCP_Sender extends TCP_Sender_ADT {
 		tcpH.setTh_sum(CheckSum.computeChkSum(tcpPack));
 		tcpPack.setTcpH(tcpH);
 
-		try {
-			record.put(next_seq, tcpPack.clone());
-		} catch (CloneNotSupportedException ignored) {
-		}
+//		try {
+//			record.put(next_seq, tcpPack.clone());
+//		} catch (CloneNotSupportedException ignored) {
+//		}
 		//发送TCP数据报
 		udt_send(tcpPack);
 
@@ -155,15 +155,20 @@ public class TCP_Sender extends TCP_Sender_ADT {
 			if (ack_times == 4){
 				// 连续收到3个对同一个报文的ack
 				// 执行快重传 ack+1 序列的包
-				TCP_PACKET pkt = record.get(ack_cache + 1);
+				// 这个包就是队首的包
+				TCP_PACKET pkt = packets_buffer.iterator().next();
+				// TCP_PACKET pkt = record.get(ack_cache + 1);
 				System.out.println("3-ack, resend pkt: " + pkt.getTcpH().getTh_seq());
 				udt_send(pkt);
 
 				System.out.println("Windows size in sender: " + this.cwnd);
+
 				// 拥塞窗口减半
-				cwnd = (short) (cwnd / 2);
+				cwnd = (short) Math.max(cwnd / 2, 1);
 				cwnd_tmp = cwnd;
-				ssthresh = (short) Math.max(ssthresh / 2, 2);
+
+				// ssthresh = cwnd / 2
+				ssthresh = cwnd;
 				System.out.println("CongestionAvoidance used!");
 				System.out.println("Windows size become:" + cwnd);
 				System.out.println("ssthresh size become:" + ssthresh);
